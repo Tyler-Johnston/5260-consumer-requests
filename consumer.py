@@ -6,7 +6,7 @@ import argparse
 
 # Define S3 and DynamoDB Clients
 S3_CLIENT = boto3.client('s3')
-DYNAMODB_CLIENT = boto3.client('dynamodb', )
+DYNAMODB_CLIENT = boto3.client('dynamodb')
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,18 +25,35 @@ def RetrieveRequest(source):
         logging.error(f"Error retrieving request: {e}")
     return None, None
 
+def IsValidWidgetId(widgetId):
+    if len(widgetId) != 36:
+        return False
+    # ensure the positions of the dashes are correct
+    if widgetId[8] != "-" or widgetId[13] != "-" or widgetId[18] != "-" or widgetId[23] != "-":
+        return False
+    # check that all other characters are hexadecimal
+    hexCharacters = set("0123456789abcdefABCDEF")
+    for i, char in enumerate(widgetId):
+        if i in [8, 13, 18, 23]:
+            continue  # skip dash positions
+        if char not in hexCharacters:
+            return False
+    return True
+
 def ProcessRequest(request, destination, storage):
-    requestType = request["type"]
-    if requestType == "create":
-        CreateWidget(request, destination, storage)
-    elif requestType == "delete":
-        #TODO: add this delete functionality later
-        logging.info("Delete request found. Skipping for now...")
-    elif requestType == "update":
-        #TODO: add this update functionality later
-        logging.info("Update request found. Skipping for now...")
-    else:
-        logging.warning(f"Unknown request type: {requestType}")
+    widgetId = request["widgetId"]
+    if IsValidWidgetId(widgetId):
+        requestType = request["type"]
+        if requestType == "create":
+            CreateWidget(request, destination, storage)
+        elif requestType == "delete":
+            #TODO: add this delete functionality later
+            logging.info("Delete request found. Skipping for now...")
+        elif requestType == "update":
+            #TODO: add this update functionality later
+            logging.info("Update request found. Skipping for now...")
+        else:
+            logging.warning(f"Unknown request type: {requestType}")
 
 def CreateWidget(request, destination, storage):
     try:
@@ -53,9 +70,9 @@ def CreateWidget(request, destination, storage):
             S3_CLIENT.put_object(Body=data, Bucket=destination, Key=s3Key, ContentType='application/json')
             logging.info(f"Widget with ID {widgetId} stored in S3 at {s3Key}")
         elif storage == "dynamodb":   
-            dynamoDict = {"Item": {}}
+            dynamoDict = {"id": {"S": widgetId}}
             for key, value in request.items():
-                dynamoDict["Item"][key] = GetDynamoAttribute(value)
+                dynamoDict[key] = GetDynamoAttribute(value)
             DYNAMODB_CLIENT.put_item(TableName=destination, Item=dynamoDict)
             logging.info(f"Widget with ID {widgetId} stored in DynamoDB at {destination}")
     except Exception as e:
@@ -87,9 +104,12 @@ def main(source, destination, storage):
         else:
             time.sleep(.1)
 
+# this will only run if consumer.py is run directly, not being imported
+# i needed to place the command-line args here to let my unit test program work
 if __name__ == "__main__":
     # Command-line arguments setup 
-    # EXAMPLE: python consumer.py --request-source usu-cs5260-tylerj-requests --request-destination usu-cs5260-tylerj-web --storage-strategy s3
+    # EXAMPLE: python3 consumer.py --request-source usu-cs5260-tylerj-requests --request-destination usu-cs5260-tylerj-web --storage-strategy s3
+    # python3 consumer.py --request-source usu-cs5260-tylerj-requests --request-destination widgets --storage-strategy dynamodb
     parser = argparse.ArgumentParser(description='Consumer program to process requests to create, update, or delete widgets')
     parser.add_argument('--request-source', required=True, help='S3 bucket where the requests are fetched from')
     parser.add_argument('--request-destination', required=True, help='Choose where to store the widgets')
