@@ -3,3 +3,4 @@
 *.zip
 *.json
 .DS_Store
+*.log

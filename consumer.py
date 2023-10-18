@@ -8,7 +8,12 @@ import argparse
 S3_CLIENT = boto3.client('s3')
 DYNAMODB_CLIENT = boto3.client('dynamodb')
 
-logging.basicConfig(level=logging.INFO)
+logFile = 'consumer.log'
+logging.basicConfig(
+    filename=logFile,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 def RetrieveRequest(source):
     try:
