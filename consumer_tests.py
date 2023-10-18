@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import patch, Mock
+import json
 from consumer import RetrieveRequest, ProcessRequest, CreateWidget, DeleteRequest
 
 SAMPLE_REQUEST = {
@@ -16,7 +17,6 @@ SAMPLE_REQUEST = {
         {"name": "note", "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"}
     ]
 }
-
 class TestRetrieveRequest(unittest.TestCase):
 
     @patch('consumer.S3_CLIENT.list_objects_v2')
@@ -28,7 +28,7 @@ class TestRetrieveRequest(unittest.TestCase):
         mock_get_object.return_value = {
             'Body': Mock(read=lambda: json.dumps(SAMPLE_REQUEST).encode('utf-8'))
         }
-        request, key = RetrieveRequest()
+        request, key = RetrieveRequest('some-bucket')
         self.assertEqual(key, '1234')
         self.assertEqual(request, SAMPLE_REQUEST)
 
@@ -36,36 +36,34 @@ class TestProcessRequest(unittest.TestCase):
 
     @patch('consumer.CreateWidget')
     def test_process_create_request(self, mock_create_widget):
-        ProcessRequest(SAMPLE_REQUEST)
+        ProcessRequest(SAMPLE_REQUEST, 'destination', 's3')
         mock_create_widget.assert_called_once()
 
     @patch('consumer.CreateWidget')
     def test_process_delete_request(self, mock_create_widget):
         delete_request = SAMPLE_REQUEST.copy()
         delete_request['type'] = 'delete'
-        ProcessRequest(delete_request)
+        ProcessRequest(delete_request, 'destination', 's3')
         mock_create_widget.assert_not_called()
 
 class TestCreateWidget(unittest.TestCase):
 
     @patch('consumer.S3_CLIENT.put_object')
     def test_create_widget_s3(self, mock_put_object):
-        with patch('consumer.STORAGE_STRATEGY', 's3'):
-            CreateWidget(SAMPLE_REQUEST)
-            mock_put_object.assert_called_once()
+        CreateWidget(SAMPLE_REQUEST, 'destination', 's3')
+        mock_put_object.assert_called_once()
 
     @patch('consumer.DYNAMODB_CLIENT.put_item')
     def test_create_widget_dynamodb(self, mock_put_item):
-        with patch('consumer.STORAGE_STRATEGY', 'dynamodb'):
-            CreateWidget(SAMPLE_REQUEST)
-            mock_put_item.assert_called_once()
+        CreateWidget(SAMPLE_REQUEST, 'destination', 'dynamodb')
+        mock_put_item.assert_called_once()
 
 class TestDeleteRequest(unittest.TestCase):
 
     @patch('consumer.S3_CLIENT.delete_object')
     def test_delete_request(self, mock_delete_object):
-        DeleteRequest('1234')
-        mock_delete_object.assert_called_once_with(Bucket='YOUR_REQUEST_SOURCE', Key='1234')
+        DeleteRequest('1234', 'some-bucket')
+        mock_delete_object.assert_called_once_with(Bucket='some-bucket', Key='1234')
 
 if __name__ == '__main__':
     unittest.main()
