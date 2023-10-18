@@ -4,40 +4,45 @@ import time
 import logging
 import argparse
 
-#TODO: double check this is how the command-line args are passed
-parser = argparse.ArgumentParser(description='Process S3 buckets / DyanmoDB table for requests and widgets.')
-parser.add_argument('--request-bucket', required=True, help='S3 bucket where the requests are fetched from.')
-parser.add_argument('--widget-bucket', required=True, help='S3 bucket / DynamoDB table where the processed requests need to go.')
+# Command-line arguments setup
+parser = argparse.ArgumentParser(description='Consumer program to process requests to create, update, or delete widgets')
+parser.add_argument('--request-source', required=True, help='S3 bucket where the requests are fetched from.')
+parser.add_argument('--request-destination', required=True, help='Choose where to store the widgets.')
 args = parser.parse_args()
 
-REQUESTS_SOURCE = args.request_bucket
-REQUESTS_DESTINATION = args.widget_bucket
+REQUESTS_SOURCE = args.request_source
+REQUESTS_DESTINATION = args.request_destination
 
 logging.basicConfig(level=logging.INFO)
-s3_client = boto3.client('s3')
+client = boto3.client('s3')
 
 def RetrieveRequest():
+    # Logic to retrieve a single Widget Request from Bucket 2.
     pass
 
-def ProcessRequest():
-    pass
+def ProcessRequest(request):
+    requestType = request["type"]
+    if requestType == "create":
+        CreateWidget(request)
+    #TODO: add delete / update functionality in the next iteration of this assignemnt
+    elif requestType == "delete":
+        logging.info("Delete request found. Skipping for now...")
+    elif requestType == "update":
+        logging.info("Update request found. Skipping for now...")
+    else:
+        logging.warning(f"Unknown request type: {requestType}")
 
-def DeleteRequest():
-    pass
-
-def CreateRequest():
+def DeleteRequest(request):
     pass
 
 def main():
-    # loop until some stop condition is met
-        # try to get the request (RetrieveRequest)
-        # if got request:
-            # process the request  (ProcessRequest)
-        # else:
-            # wait a while (100 ms)
-    pass
-    
+    while True:
+        request = RetrieveRequest()
+        if request:
+            ProcessRequest(request)
+            DeleteRequest(request)
+        else:
+            time.sleep(0.1)
 
 if __name__ == "__main__":
     main()
-
