@@ -57,7 +57,24 @@ class TestCreateWidget(unittest.TestCase):
         for request in SAMPLE_REQUESTS:
             with self.subTest(request=request):
                 CreateWidget(request, 'destination', 's3')
+                # make sure the call to add items to s3 is only called once
                 mock_put_object.assert_called_once()
+
+                # make that the S3 key matches the expected format
+                callArgs = mock_put_object.call_args[1]
+                expectedS3Key = f"widgets/{request['owner'].replace(' ', '-').lower()}/{request['widgetId']}"
+                self.assertEqual(callArgs['Key'], expectedS3Key)
+
+                # make sure bucket destination is the one passed in
+                self.assertEqual(callArgs["Bucket"], 'destination')
+
+                # make sure the data being passed into s3 is the proper json format
+                data = callArgs["Body"]
+                try:
+                    data = json.loads(data)
+                except Exception as e:
+                    self.fail("body data is not valid JSON")
+
                 mock_put_object.reset_mock()
 
     @patch('consumer.DYNAMODB_CLIENT.put_item')
@@ -65,7 +82,23 @@ class TestCreateWidget(unittest.TestCase):
         for request in SAMPLE_REQUESTS:
             with self.subTest(request=request):
                 CreateWidget(request, 'destination', 'dynamodb')
+                # make sure the call to add items to dynamo db is only called once
                 mock_put_item.assert_called_once()
+
+                # make sure 'dynamoDict' contains the required structure elements
+                callArgs = mock_put_item.call_args[1]  # obtain the keyword arguments
+                self.assertTrue((callArgs['TableName'], "destination"))
+                self.assertTrue(isinstance(callArgs['Item'], dict))
+                itemDict = callArgs['Item']
+                self.assertTrue('id' in itemDict)
+                self.assertTrue(isinstance(itemDict['id'], dict))
+                self.assertTrue('type' in itemDict)
+                self.assertTrue(isinstance(itemDict['type'], dict))
+                self.assertTrue('requestId' in itemDict)
+                self.assertTrue(isinstance(itemDict['requestId'], dict))
+                self.assertTrue('widgetId' in itemDict)
+                self.assertTrue(isinstance(itemDict['widgetId'], dict))
+
                 mock_put_item.reset_mock()
 
 class TestDeleteRequest(unittest.TestCase):
