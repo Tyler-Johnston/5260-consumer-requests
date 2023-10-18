@@ -4,7 +4,8 @@ import time
 import logging
 import argparse
 
-# Command-line arguments setup
+# Command-line arguments setup 
+# EXAMPLE: python consumer.py --request-source usu-cs5260-tylerj-requests --request-destination usu-cs5260-tylerj-web --storage-strategy s3
 parser = argparse.ArgumentParser(description='Consumer program to process requests to create, update, or delete widgets')
 parser.add_argument('--request-source', required=True, help='S3 bucket where the requests are fetched from')
 parser.add_argument('--request-destination', required=True, help='Choose where to store the widgets')
@@ -27,14 +28,15 @@ def RetrieveRequest():
         # the request data's key is numeric with the same number of digits each time; thus, grabbing the first element should be the smallest key
         response = S3_CLIENT.list_objects_v2(Bucket=REQUEST_SOURCE, MaxKeys=1)
         if 'Contents' in response:
-            firstObjectKey = response['Contents'][0]['Key']
+            key = response['Contents'][0]['Key']
             # obtain the actual content of the object
-            myObject = S3_CLIENT.get_object(Bucket=REQUEST_SOURCE, Key=firstObjectKey)
-            data = json.loads(myObject['Body'].read().decode('utf-8'))
-            return data
+            myObject = S3_CLIENT.get_object(Bucket=REQUEST_SOURCE, Key=key)
+            request = json.loads(myObject['Body'].read().decode('utf-8'))
+            logging.info(f"Request with key {key} retrieved.")
+            return request, key
     except Exception as e:
         logging.error(f"Error retrieving request: {e}")
-    return None
+    return None, None
 
 def ProcessRequest(request):
     requestType = request["type"]
@@ -51,14 +53,20 @@ def ProcessRequest(request):
 
 def CreateWidget(request):
     try:
-        data = json.dumps(request)
         widgetId = request["widgetId"]
+        owner = request["owner"].replace(" ", "-").lower()
+        data = json.dumps(request)
+        # ensure 'other attributes' is at the top level of 'request' as per assignment description
+        if "otherAttributes" in request:
+            otherAttributes = request.pop("otherAttributes")
+            request.update(otherAttributes)
         if STORAGE_STRATEGY == "s3":
-            S3_CLIENT.put_object(Body=data, Bucket=REQUEST_DESTINATION, Key=widgetId, ContentType='application/json')
-            logging.info(f"Widget with ID {widgetId} stored in S3 at {REQUEST_DESTINATION}")
+            s3Key = f"widgets/{owner}/{widgetId}"
+            data = json.dumps(request)
+            S3_CLIENT.put_object(Body=data, Bucket=REQUEST_DESTINATION, Key=s3Key, ContentType='application/json')
+            logging.info(f"Widget with ID {widgetId} stored in S3 at {s3Key}")
         elif STORAGE_STRATEGY == "dynamodb":   
-            # convert data to a dynamoDB friendly format
-            dynamoDict = {}
+            dynamoDict = {"Item": {}}
             for key, value in request.items():
                 dynamoDict["Item"][key] = GetDynamoAttribute(value)
             DYNAMODB_CLIENT.put_item(TableName=REQUEST_DESTINATION, Item=dynamoDict)
@@ -85,12 +93,12 @@ def DeleteRequest(key):
 
 def main():
     while True:
-        request = RetrieveRequest()
+        request, key = RetrieveRequest()
         if request:
             ProcessRequest(request)
-            # DeleteRequest(request)
+            DeleteRequest(key)
         else:
-            time.sleep(.5)
+            time.sleep(.1)
 
 if __name__ == "__main__":
     main()
