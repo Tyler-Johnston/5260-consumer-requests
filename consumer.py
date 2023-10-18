@@ -28,7 +28,7 @@ def RetrieveRequest():
         response = S3_CLIENT.list_objects_v2(Bucket=REQUEST_SOURCE, MaxKeys=1)
         if 'Contents' in response:
             firstObjectKey = response['Contents'][0]['Key']
-            # obtin the actual content of the object
+            # obtain the actual content of the object
             myObject = S3_CLIENT.get_object(Bucket=REQUEST_SOURCE, Key=firstObjectKey)
             data = json.loads(myObject['Body'].read().decode('utf-8'))
             return data
@@ -41,7 +41,8 @@ def ProcessRequest(request):
     if requestType == "create":
         CreateWidget(request)
     elif requestType == "delete":
-        DeleteWidget(request)
+        #TODO: add this delete functionality later
+        logging.info("Delete request found. Skipping for now...")
     elif requestType == "update":
         #TODO: add this update functionality later
         logging.info("Update request found. Skipping for now...")
@@ -56,13 +57,26 @@ def CreateWidget(request):
             S3_CLIENT.put_object(Body=data, Bucket=REQUEST_DESTINATION, Key=widgetId, ContentType='application/json')
             logging.info(f"Widget with ID {widgetId} stored in S3 at {REQUEST_DESTINATION}")
         elif STORAGE_STRATEGY == "dynamodb":   
-            #TODO: handle creating dynamodb side of things
-            # dynamodb.put_item(TableName=REQUEST_DESTINATION, Item= pass)
+            # convert data to a dynamoDB friendly format
+            dynamoDict = {}
+            for key, value in request.items():
+                dynamoDict["Item"][key] = GetDynamoAttribute(value)
+            DYNAMODB_CLIENT.put_item(TableName=REQUEST_DESTINATION, Item=dynamoDict)
             logging.info(f"Widget with ID {widgetId} stored in DynamoDB at {REQUEST_DESTINATION}")
     except Exception as e:
         logging.error(f"Error creating widget: {e}")
 
-def DeleteWidget(key):
+def GetDynamoAttribute(value):
+    if isinstance(value, str):
+        return {"S": value}
+    elif isinstance(value, int) or isinstance(value, float):
+        return {"N": str(value)}
+    elif isinstance(value, list):
+        return {"L": [GetDynamoAttribute(item) for item in value]}
+    elif isinstance(value, dict):
+        return {"M": {key: GetDynamoAttribute(val) for key, val in value.items()}}
+
+def DeleteRequest(key):
     try:
         S3_CLIENT.delete_object(Bucket=REQUEST_SOURCE, Key=key)
         logging.info(f"Request with key {key} deleted from {REQUEST_SOURCE}")
@@ -74,7 +88,7 @@ def main():
         request = RetrieveRequest()
         if request:
             ProcessRequest(request)
-            DeleteRequest(request)
+            # DeleteRequest(request)
         else:
             time.sleep(.5)
 
