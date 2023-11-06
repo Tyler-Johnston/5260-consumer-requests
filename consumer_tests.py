@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, Mock
 import json
 import os
-from consumer import RetrieveRequest, ProcessRequest, CreateWidget, DeleteRequest, IsValidWidgetId
+from consumer import RetrieveRequestFromS3, RetrieveRequestsFromQueue, ProcessRequest, CreateOrUpdateWidget, DeleteWidget, DeleteFromStorage, DeleteFromQueue, IsValidWidgetId
 
 # place the folder of sample requests into a list for testing purposes
 def LoadSampleRequests(directory):
@@ -19,44 +19,52 @@ def LoadSampleRequests(directory):
     return requests
 
 SAMPLE_REQUESTS = LoadSampleRequests("sample-requests/")
-class TestRetrieveRequest(unittest.TestCase):
+
+class TestRetrieveRequestFromS3(unittest.TestCase):
 
     @patch('consumer.S3_CLIENT.list_objects_v2')
     @patch('consumer.S3_CLIENT.get_object')
-    def test_retrieve_request(self, mock_get_object, mock_list_objects):
-        mock_list_objects.return_value = {
-            'Contents': [{'Key': '1234'}]
-        }
+    def test_retrieve_request_from_s3(self, mock_get_object, mock_list_objects):
+        mock_list_objects.return_value = {'Contents': [{'Key': '1234'}]}
         for myRequest in SAMPLE_REQUESTS:
             with self.subTest(myRequest=myRequest):
-                mock_get_object.return_value = {
-                    'Body': Mock(read=lambda: json.dumps(myRequest).encode('utf-8'))
-                }
-                request, key = RetrieveRequest('some-bucket')
+                mock_get_object.return_value = {'Body': Mock(read=lambda: json.dumps(myRequest).encode('utf-8'))}
+                request, key = RetrieveRequestFromS3("some-bucket")
                 self.assertEqual(key, '1234')
                 self.assertEqual(request, myRequest)
-
+        
 class TestProcessRequest(unittest.TestCase):
 
-    @patch('consumer.CreateWidget')
-    def test_process_create_request(self, mock_create_widget):
+    @patch('consumer.CreateOrUpdateWidget')
+    @patch('consumer.DeleteWidget')
+    def test_process_functions_called_once(self, mock_delete_widget, mock_create_update_widget):
         for request in SAMPLE_REQUESTS:
             with self.subTest(request=request):
-                if request['type'] == 'create':
-                    ProcessRequest(request, 'destination', 's3')
-                    mock_create_widget.assert_called_once()
-                elif request['type'] != 'create':
-                    ProcessRequest(request, 'destination', 's3')
-                    mock_create_widget.assert_not_called()
-                mock_create_widget.reset_mock()
+                ProcessRequest(request, 'destination', 's3')  # Call ProcessRequest once per iteration
+                
+                # check the number of times CreateOrUpdateWidget was called
+                if request['type'] == 'create' or request['type'] == 'update':
+                    mock_create_update_widget.assert_called_once()
+                else:
+                    mock_create_update_widget.assert_not_called()
 
-class TestCreateWidget(unittest.TestCase):
+                # check the number of times DeleteWidget was called
+                if request['type'] == 'delete':
+                    mock_delete_widget.assert_called_once()
+                else:
+                    mock_delete_widget.assert_not_called()
+
+                # reset mocks at the end of each iteration
+                mock_create_update_widget.reset_mock()
+                mock_delete_widget.reset_mock()
+
+class TestCreateOrUpdateWidget(unittest.TestCase):
 
     @patch('consumer.S3_CLIENT.put_object')
     def test_create_widget_s3(self, mock_put_object):
         for request in SAMPLE_REQUESTS:
             with self.subTest(request=request):
-                CreateWidget(request, 'destination', 's3')
+                CreateOrUpdateWidget(request, 'destination', 's3', operation="created")
                 # make sure the call to add items to s3 is only called once
                 mock_put_object.assert_called_once()
 
@@ -81,7 +89,7 @@ class TestCreateWidget(unittest.TestCase):
     def test_create_widget_dynamodb(self, mock_put_item):
         for request in SAMPLE_REQUESTS:
             with self.subTest(request=request):
-                CreateWidget(request, 'destination', 'dynamodb')
+                CreateOrUpdateWidget(request, 'destination', 'dynamodb', operation="created")
                 # make sure the call to add items to dynamo db is only called once
                 mock_put_item.assert_called_once()
 
@@ -105,8 +113,164 @@ class TestDeleteRequest(unittest.TestCase):
 
     @patch('consumer.S3_CLIENT.delete_object')
     def test_delete_request(self, mock_delete_object):
-        DeleteRequest('1234', 'some-bucket')
+        DeleteFromStorage('1234', 'some-bucket')
         mock_delete_object.assert_called_once_with(Bucket='some-bucket', Key='1234')
+
+    @patch('consumer.SQS_CLIENT.delete_message')
+    def test_delete_from_queue(self, mock_delete_message):
+        receipt_handle = 'SomeReceiptHandle'
+        queue_url = 'https://sqs.some-region.amazonaws.com/123456789012/my-queue'
+        DeleteFromQueue(receipt_handle, queue_url)
+        mock_delete_message.assert_called_once_with(
+            QueueUrl=queue_url,
+            ReceiptHandle=receipt_handle
+        )
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# class TestDeleteRequest(unittest.TestCase):
+
+#     @patch('consumer.S3_CLIENT.delete_object')
+#     def test_delete_request(self, mock_delete_object):
+#         DeleteRequest('1234', 'some-bucket')
+#         mock_delete_object.assert_called_once_with(Bucket='some-bucket', Key='1234')
+
+# if __name__ == '__main__':
+#     unittest.main()
+
+
+
+
+# # import unittest
+# # from unittest.mock import patch, Mock
+# # import json
+# # import os
+# # from consumer import (
+# #     RetrieveRequestFromS3, RetrieveRequestsFromQueue, ProcessRequest, CreateOrUpdateWidget, DeleteWidget,
+# #     IsValidWidgetId
+# # )
+
+# # def LoadSampleRequests(directory):
+# #     requests = []
+# #     for filename in os.listdir(directory):
+# #         filePath = os.path.join(directory, filename)
+# #         with open(filePath, 'r') as file:
+# #             try:
+# #                 data = json.load(file)
+# #                 if IsValidWidgetId(data['widgetId']):
+# #                     requests.append(data)
+# #             except json.JSONDecodeError:
+# #                 print(f"Error decoding JSON in file: {filePath}")
+# #     return requests
+
+# # SAMPLE_REQUESTS = LoadSampleRequests("sample-requests/")
+
+# # class TestRetrieveRequestFromS3(unittest.TestCase):
+
+# #     @patch('consumer.S3_CLIENT.list_objects_v2')
+# #     @patch('consumer.S3_CLIENT.get_object')
+# #     def test_retrieve_request_from_s3(self, mock_get_object, mock_list_objects_v2):
+# #         mock_list_objects_v2.return_value = {
+# #             'Contents': [{'Key': '1234'}]
+# #         }
+# #         for myRequest in SAMPLE_REQUESTS:
+# #             with self.subTest(myRequest=myRequest):
+# #                 mock_get_object.return_value = {
+# #                     'Body': Mock(read=lambda: json.dumps(myRequest).encode('utf-8'))
+# #                 }
+# #                 request, key = RetrieveRequestFromS3('some-bucket')
+# #                 self.assertEqual(key, '1234')
+# #                 self.assertEqual(request, myRequest)
+
+# # # class TestRetrieveRequestsFromQueue(unittest.TestCase):
+
+# # #     @patch('consumer.SQS_CLIENT.receive_message')
+# # #     def test_retrieve_requests_from_queue(self, mock_receive_message):
+
+# # #         # prepare the mock SQS messages
+# # #         mock_sqs_messages = [{'Body': json.dumps(request)} for request in SAMPLE_REQUESTS]
+# # #         mock_response = {'Messages': mock_sqs_messages}
+# # #         mock_receive_message.return_value = mock_response
+
+# # #         queue_url = 'https://sqs.some-region.amazonaws.com/123456789012/my-queue'
+# # #         messages = RetrieveRequestsFromQueue(queue_url)
+
+# # #         # assertions to check if the correct number of messages were retrieved and they match the sample requests
+# # #         self.assertEqual(len(messages), len(SAMPLE_REQUESTS))
+# # #         for i, message in enumerate(messages):
+# # #             self.assertEqual(json.loads(message['Body']), SAMPLE_REQUESTS[i])
+
+# # #         # validate that the mock was called with the expected parameters
+# # #         mock_receive_message.assert_called_once_with(
+# # #             QueueUrl=queue_url,
+# # #             MaxNumberOfMessages=10,
+# # #             WaitTimeSeconds=20
+# # #         )
+# # class TestProcessRequest(unittest.TestCase):
+
+# #     @patch('consumer.CreateOrUpdateWidget')
+# #     def test_process_request(self, mock_create_or_update_widget):
+# #         for request in SAMPLE_REQUESTS:
+# #             with self.subTest(request=request):
+# #                 if request['type'] == 'create':
+# #                     ProcessRequest(request, 'destination', 's3')
+# #                     mock_create_or_update_widget.assert_called_once()
+# #                 elif request['type'] != 'create':
+# #                     ProcessRequest(request, 'destination', 's3')
+# #                     mock_create_or_update_widget.assert_not_called()
+# #                 mock_create_or_update_widget.reset_mock()
+
+# # class TestCreateOrUpdateWidget(unittest.TestCase):
+
+# #     @patch('consumer.S3_CLIENT.put_object')
+# #     def test_create_or_update_widget_s3(self, mock_put_object):
+# #         for request in SAMPLE_REQUESTS:
+# #             with self.subTest(request=request):
+# #                 CreateOrUpdateWidget(request, 'destination', 's3')
+# #                 mock_put_object.assert_called_once()
+
+# #                 callArgs = mock_put_object.call_args[1]
+# #                 expectedS3Key = f"widgets/{request['owner'].replace(' ', '-').lower()}/{request['widgetId']}"
+# #                 self.assertEqual(callArgs['Key'], expectedS3Key)
+# #                 self.assertEqual(callArgs["Bucket"], 'destination')
+
+# #                 data = callArgs["Body"]
+# #                 try:
+# #                     data = json.loads(data)
+# #                 except Exception as e:
+# #                     self.fail("body data is not valid JSON")
+
+# #                 mock_put_object.reset_mock()
+
+# #     @patch('consumer.DYNAMODB_CLIENT.put_item')
+# #     def test_create_or_update_widget_dynamodb(self, mock_put_item):
+# #         for request in SAMPLE_REQUESTS:
+# #             with self.subTest(request=request):
+# #                 CreateOrUpdateWidget(request, 'destination', 'dynamodb')
+# #                 mock_put_item.assert_called_once()
+
+# #                 callArgs = mock_put_item.call_args[1]
+# #                 self.assertTrue('TableName' in callArgs)
+# #                 self.assertEqual(callArgs['TableName'], "destination")
+# #                 self.assertTrue('Item' in callArgs)
+# #                 itemDict = callArgs['Item']
+# #                 self.assertTrue('id' in itemDict)
+# #                 self.assertTrue('type' in itemDict)
+# #                 self.assertTrue('requestId' in itemDict)
+# #                 self.assertTrue('widgetId' in itemDict)
+
+# #                 mock_put_item.reset_mock()
+
+# # class TestDeleteWidget(unittest.TestCase):
+
+# #     @patch('consumer.S3_CLIENT.delete_object')
+# #     def test_delete_widget_s3(self, mock_delete_object):
+# #         DeleteWidget('1234', 'some-bucket', 's3')
+# #         mock_delete_object.assert_called_once_with(Bucket='some-bucket', Key='1234')
+
+# #     # Additional tests for dynamodb would follow the same structure
+
+# # if __name__ == '__main__':
+# #     unittest.main()

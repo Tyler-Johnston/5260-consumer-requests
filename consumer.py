@@ -129,7 +129,9 @@ def DeleteFromStorage(key, bucketSource):
         logging.error(f"Error deleting request with key {key}: {e}")
 
 def DeleteFromQueue(queueURL, receiptHandle):
+    print(f"QueueUrl: {queueURL}, ReceiptHandle: {receiptHandle}")  # Add this
     SQS_CLIENT.delete_message(QueueUrl=queueURL, ReceiptHandle=receiptHandle)
+    logging.info("Deleted a response from SQS")
 
 # ---- DRIVER CODE ----
 def main(bucketSource, destination, storageStrategy, queueURL):
@@ -179,7 +181,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # define command-line argument constants
     REQUEST_SOURCE = args.request_source # optional - the s3 bucket it is coming from
     REQUEST_DESTINATION = args.request_destination # required
     STORAGE_STRATEGY = args.storage_strategy # required
