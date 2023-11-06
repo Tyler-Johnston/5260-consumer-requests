@@ -9,9 +9,9 @@ S3_CLIENT = boto3.client('s3')
 DYNAMODB_CLIENT = boto3.client('dynamodb')
 SQS_CLIENT = boto3.client('sqs')
 
-logFile = 'consumer.log'
+# logFile = 'consumer.log'
 logging.basicConfig(
-    filename=logFile,
+    # filename=logFile,
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
@@ -71,14 +71,16 @@ def ProcessRequest(request, destination, storageStrategy):
     widgetId = request["widgetId"]
     if IsValidWidgetId(widgetId):
         requestType = request["type"]
-        if requestType == "create" or requestType == "update":
-            CreateOrUpdateWidget(request, destination, storageStrategy)
+        if requestType == "create":
+            CreateOrUpdateWidget(request, destination, storageStrategy, operation="created")
+        elif requestType == "update":
+            CreateOrUpdateWidget(request, destination, storageStrategy, operation="updated")
         elif requestType == "delete":
             DeleteWidget(widgetId, destination, storageStrategy)
         else:
             logging.warning(f"Unknown request type: {requestType}")
 
-def CreateOrUpdateWidget(request, destination, storageStrategy):
+def CreateOrUpdateWidget(request, destination, storageStrategy, operation):
     try:
         widgetId = request["widgetId"]
         
@@ -92,14 +94,14 @@ def CreateOrUpdateWidget(request, destination, storageStrategy):
             s3Key = f"widgets/{owner}/{widgetId}"
             data = json.dumps(request)
             S3_CLIENT.put_object(Body=data, Bucket=destination, Key=s3Key, ContentType='application/json')
-            logging.info(f"Widget with ID {widgetId} stored in S3 at {destination}")
+            logging.info(f"Widget with ID {widgetId} {operation} in S3 at {destination}")
 
         elif storageStrategy == "dynamodb":   
             dynamoDict = {"id": {"S": widgetId}}
             for key, value in request.items():
                 dynamoDict[key] = GetDynamoAttribute(value)
             DYNAMODB_CLIENT.put_item(TableName=destination, Item=dynamoDict)
-            logging.info(f"Widget with ID {widgetId} stored in DynamoDB at {destination}")
+            logging.info(f"Widget with ID {widgetId} {operation} in DynamoDB at {destination}")
 
     except Exception as e:
         logging.error(f"Error creating widget: {e}")
@@ -147,7 +149,8 @@ def main(bucketSource, destination, storageStrategy, queueURL):
             if requests:
                 for request in requests:
                     try:
-                        ProcessRequest(request, destination, storageStrategy)
+                        messageBody = json.loads(request['Body'])
+                        ProcessRequest(messageBody, destination, storageStrategy)
                         DeleteFromQueue(queueURL, request['ReceiptHandle'])
                     except Exception as e:
                         logging.error(f"Error processing request from queue: {e}")
@@ -160,8 +163,8 @@ def main(bucketSource, destination, storageStrategy, queueURL):
 # ---- COMMAND-LINE ARGS SETUP ----
 if __name__ == "__main__":
     # EXAMPLES:
-    # python3 consumer.py --request-source usu-cs5260-tylerj-requests --request-destination widgets --storage-strategy s3
-    # python3 consumer.py --queue-url https://sqs.us-west-2.amazonaws.com/123456789012/myqueue --request-destination widgets --storage-strategy dynamodb
+    # python3 consumer.py --request-source usu-cs5260-tylerj-requests --request-destination usu-cs5260-tylerj-web --storage-strategy dynamodb
+    # python3 consumer.py --queue-url https://sqs.us-east-1.amazonaws.com/487854293488/cs5260-requests --request-destination usu-cs5260-tylerj-web --storage-strategy s3
 
     parser = argparse.ArgumentParser(description='Consumer program to process requests to create, update, or delete widgets')
     parser.add_argument('--storage-strategy', required=True, choices=['s3', 'dynamodb'], help='Choose \'s3\' to store widgets in a bucket or \'dynamodb\' to store widgets in a dynamodb table')
