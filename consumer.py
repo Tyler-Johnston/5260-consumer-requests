@@ -6,8 +6,8 @@ import argparse
 
 # ---- SETUP CLIENTS / LOGGING ---- 
 S3_CLIENT = boto3.client('s3')
-DYNAMODB_CLIENT = boto3.client('dynamodb')
-SQS_CLIENT = boto3.client('sqs')
+DYNAMODB_CLIENT = boto3.client('dynamodb', "us-east-1")
+SQS_CLIENT = boto3.client('sqs', "us-east-1")
 
 # logFile = 'consumer.log'
 logging.basicConfig(
