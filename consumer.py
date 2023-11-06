@@ -9,7 +9,6 @@ S3_CLIENT = boto3.client('s3')
 DYNAMODB_CLIENT = boto3.client('dynamodb')
 SQS_CLIENT = boto3.client('sqs')
 
-
 logFile = 'consumer.log'
 logging.basicConfig(
     filename=logFile,
@@ -66,11 +65,9 @@ def ProcessRequest(request, destination, storage):
         if requestType == "create":
             CreateWidget(request, destination, storage)
         elif requestType == "delete":
-            #TODO: add this delete functionality later
-            logging.info("Delete request found. Skipping for now...")
+            DeleteWidget(request, destination, storage)
         elif requestType == "update":
-            #TODO: add this update functionality later
-            logging.info("Update request found. Skipping for now...")
+            UpdateWidget(request, destination, storage)
         else:
             logging.warning(f"Unknown request type: {requestType}")
 
@@ -96,6 +93,36 @@ def CreateWidget(request, destination, storage):
             logging.info(f"Widget with ID {widgetId} stored in DynamoDB at {destination}")
     except Exception as e:
         logging.error(f"Error creating widget: {e}")
+
+def UpdateWidget(request, destination, storage):
+    widgetId = request["widgetId"]
+    try:
+        if storage == "s3":
+            owner = request["owner"].replace(" ", "-").lower()
+            s3Key = f"widgets/{owner}/{widgetId}"  # Assumes a certain directory structure for widgets
+            data = json.dumps(request)
+            S3_CLIENT.put_object(Body=data, Bucket=destination, Key=s3Key, ContentType='application/json')
+            logging.info(f"Widget with ID {widgetId} updated in S3 at {s3Key}")
+        elif storage == "dynamodb":
+            dynamoDict = {"id": {"S": widgetId}}
+            for key, value in request.items():
+                dynamoDict[key] = GetDynamoAttribute(value)
+            DYNAMODB_CLIENT.put_item(TableName=destination, Item=dynamoDict)
+            logging.info(f"Widget with ID {widgetId} updated in DynamoDB at {destination}")
+    except Exception as e:
+        logging.error(f"Error updating widget with ID {widgetId}: {e}")
+
+def DeleteWidget(widgetId, destination, storage):
+    try:
+        if storage == "s3":
+            s3Key = f"widgets/{widgetId}"  # Assumes a certain directory structure for widgets
+            S3_CLIENT.delete_object(Bucket=destination, Key=s3Key)
+            logging.info(f"Widget with ID {widgetId} deleted from S3 at {s3Key}")
+        elif storage == "dynamodb":
+            DYNAMODB_CLIENT.delete_item(TableName=destination, Key={"id": {"S": widgetId}})
+            logging.info(f"Widget with ID {widgetId} deleted from DynamoDB at {destination}")
+    except Exception as e:
+        logging.error(f"Error deleting widget with ID {widgetId}: {e}")
 
 def GetDynamoAttribute(value):
     if isinstance(value, str):
@@ -135,9 +162,9 @@ if __name__ == "__main__":
     # EXAMPLE: python3 consumer.py --request-source usu-cs5260-tylerj-requests --request-destination usu-cs5260-tylerj-web --storage-strategy s3
     # python3 consumer.py --request-source usu-cs5260-tylerj-requests --request-destination widgets --storage-strategy dynamodb
     parser = argparse.ArgumentParser(description='Consumer program to process requests to create, update, or delete widgets')
-    parser.add_argument('--request-source', required=True, help='S3 bucket where the requests are fetched from')
-    parser.add_argument('--request-destination', required=True, help='Choose where to store the widgets')
-    parser.add_argument('--storage-strategy', required=True, choices=['s3', 'dynamodb'], help='Choose \'s3\' to store widgets in a bucket or \'dynamodb\' to store widgets in a dynamodb table')
+    parser.add_argument('--request-source', required=False, help='S3 bucket where the requests are fetched from')
+    parser.add_argument('--request-destination', required=False, help='Choose where to store the widgets')
+    parser.add_argument('--storage-strategy', required=False, choices=['s3', 'dynamodb'], help='Choose \'s3\' to store widgets in a bucket or \'dynamodb\' to store widgets in a dynamodb table')
     parser.add_argument('--queue-url', required=False, help='URL of the SQS queue')
 
     args = parser.parse_args()
