@@ -7,6 +7,8 @@ import argparse
 # Define S3 and DynamoDB Clients
 S3_CLIENT = boto3.client('s3')
 DYNAMODB_CLIENT = boto3.client('dynamodb')
+SQS_CLIENT = boto3.client('sqs')
+
 
 logFile = 'consumer.log'
 logging.basicConfig(
@@ -29,6 +31,18 @@ def RetrieveRequest(source):
     except Exception as e:
         logging.error(f"Error retrieving request: {e}")
     return None, None
+
+def FetchFromQueue(queueURL, maxMessages=10, waitTime=20):
+    response = SQS_CLIENT.receive_message(
+        QueueUrl=queueURL,
+        MaxNumberOfMessages=maxMessages,
+        WaitTimeSeconds=waitTime
+    )
+    return response.get('Messages', [])
+
+def DeleteFromQueue(queueURL, receiptHandle):
+    SQS_CLIENT.delete_message(QueueUrl=queueURL, ReceiptHandle=receiptHandle)
+
 
 def IsValidWidgetId(widgetId):
     if len(widgetId) != 36:
@@ -100,14 +114,19 @@ def DeleteRequest(key, source):
     except Exception as e:
         logging.error(f"Error deleting request with key {key}: {e}")
 
-def main(source, destination, storage):
+def main(source, destination, storage, queueURL):
     while True:
-        request, key = RetrieveRequest(source)
-        if request:
-            ProcessRequest(request, destination, storage)
-            DeleteRequest(key, source)
-        else:
+        messages = FetchFromQueue(queueURL)
+        for message in messages:
+            body = json.loads(message['Body'])
+            request, key = RetrieveRequest(source, body)  # Assumes body contains required info to retrieve S3 object.
+            if request:
+                ProcessRequest(request, destination, storage)
+                DeleteRequest(key, source)
+                DeleteFromQueue(queueURL, message['ReceiptHandle'])
+        if not messages:
             time.sleep(.1)
+
 
 # this will only run if consumer.py is run directly, not being imported
 # i needed to place the command-line args here to let my unit test program work
@@ -119,10 +138,13 @@ if __name__ == "__main__":
     parser.add_argument('--request-source', required=True, help='S3 bucket where the requests are fetched from')
     parser.add_argument('--request-destination', required=True, help='Choose where to store the widgets')
     parser.add_argument('--storage-strategy', required=True, choices=['s3', 'dynamodb'], help='Choose \'s3\' to store widgets in a bucket or \'dynamodb\' to store widgets in a dynamodb table')
+    parser.add_argument('--queue-url', required=False, help='URL of the SQS queue')
+
     args = parser.parse_args()
 
     # Define command-line argument constants
     REQUEST_SOURCE = args.request_source
     REQUEST_DESTINATION = args.request_destination
     STORAGE_STRATEGY = args.storage_strategy
-    main(REQUEST_SOURCE, REQUEST_DESTINATION, STORAGE_STRATEGY)
+    QUEUE_URL = args.queue_url
+    main(REQUEST_SOURCE, REQUEST_DESTINATION, STORAGE_STRATEGY, QUEUE_URL)
