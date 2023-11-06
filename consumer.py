@@ -129,7 +129,6 @@ def DeleteFromStorage(key, bucketSource):
         logging.error(f"Error deleting request with key {key}: {e}")
 
 def DeleteFromQueue(queueURL, receiptHandle):
-    print(f"QueueUrl: {queueURL}, ReceiptHandle: {receiptHandle}")  # Add this
     SQS_CLIENT.delete_message(QueueUrl=queueURL, ReceiptHandle=receiptHandle)
     logging.info("Deleted a response from SQS")
 
