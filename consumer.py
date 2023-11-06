@@ -4,7 +4,7 @@ import time
 import logging
 import argparse
 
-# Define S3 and DynamoDB Clients
+# ---- SETUP CLIENTS / LOGGING ---- 
 S3_CLIENT = boto3.client('s3')
 DYNAMODB_CLIENT = boto3.client('dynamodb')
 SQS_CLIENT = boto3.client('sqs')
@@ -16,40 +16,16 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-def SendToSQS(queueURL, messageBody):
-    try:
-        SQS_CLIENT.send_message(QueueUrl=queueURL, MessageBody=json.dumps(messageBody))
-        logging.info(f"Request sent to SQS: {messageBody}")
-    except Exception as e:
-        logging.error(f"Error sending message to SQS: {e}")
-
-def RetrieveRequest(source, queueURL):
-    try:
-        # the request data's key is numeric with the same number of digits each time; thus, grabbing the first element should be the smallest key
-        response = S3_CLIENT.list_objects_v2(Bucket=source, MaxKeys=1)
-        if 'Contents' in response:
-            key = response['Contents'][0]['Key']
-            # obtain the actual content of the object
-            myObject = S3_CLIENT.get_object(Bucket=source, Key=key)
-            request = json.loads(myObject['Body'].read().decode('utf-8'))
-            SendToSQS(queueURL, request)
-            logging.info(f"Request with key {key} retrieved.")
-            return request, key
-    except Exception as e:
-        logging.error(f"Error retrieving request: {e}")
-    return None, None
-
-def FetchFromQueue(queueURL, maxMessages=10, waitTime=20):
-    response = SQS_CLIENT.receive_message(
-        QueueUrl=queueURL,
-        MaxNumberOfMessages=maxMessages,
-        WaitTimeSeconds=waitTime
-    )
-    return response.get('Messages', [])
-
-def DeleteFromQueue(queueURL, receiptHandle):
-    SQS_CLIENT.delete_message(QueueUrl=queueURL, ReceiptHandle=receiptHandle)
-
+# ---- HELPER FUNCTIONS ----
+def GetDynamoAttribute(value):
+    if isinstance(value, str):
+        return {"S": value}
+    elif isinstance(value, int) or isinstance(value, float):
+        return {"N": str(value)}
+    elif isinstance(value, list):
+        return {"L": [GetDynamoAttribute(item) for item in value]}
+    elif isinstance(value, dict):
+        return {"M": {key: GetDynamoAttribute(val) for key, val in value.items()}}
 
 def IsValidWidgetId(widgetId):
     if len(widgetId) != 36:
@@ -66,135 +42,123 @@ def IsValidWidgetId(widgetId):
             return False
     return True
 
-def ProcessRequest(request, destination, storage):
+# ---- RETRIEVE REQUESTS FROM SOURCES ----
+def RetrieveRequestFromS3(bucketSource):
+    try:
+        # the request data's key is numeric with the same number of digits each time; thus, grabbing the first element should be the smallest key
+        response = S3_CLIENT.list_objects_v2(Bucket=bucketSource, MaxKeys=1)
+        if 'Contents' in response:
+            key = response['Contents'][0]['Key']
+            # obtain the actual content of the object
+            myObject = S3_CLIENT.get_object(Bucket=bucketSource, Key=key)
+            request = json.loads(myObject['Body'].read().decode('utf-8'))
+            logging.info(f"Request with key {key} retrieved.")
+            return request, key
+    except Exception as e:
+        logging.error(f"Error retrieving request: {e}")
+    return None, None
+
+def RetrieveRequestsFromQueue(queueURL, maxMessages=10, waitTime=20):
+    response = SQS_CLIENT.receive_message(
+        QueueUrl=queueURL,
+        MaxNumberOfMessages=maxMessages,
+        WaitTimeSeconds=waitTime
+    )
+    return response.get('Messages', [])
+
+# ---- PROCESS (CREATE/UPDATE/DELETE) REQUESTS AT THE DESTINATION -----
+def ProcessRequest(request, destination, storageStrategy):
     widgetId = request["widgetId"]
     if IsValidWidgetId(widgetId):
         requestType = request["type"]
-        if requestType == "create":
-            CreateWidget(request, destination, storage)
+        if requestType == "create" or requestType == "update":
+            CreateOrUpdateWidget(request, destination, storageStrategy)
         elif requestType == "delete":
-            DeleteWidget(request, destination, storage)
-        elif requestType == "update":
-            UpdateWidget(request, destination, storage)
+            DeleteWidget(widgetId, destination, storageStrategy)
         else:
             logging.warning(f"Unknown request type: {requestType}")
 
-def CreateWidget(request, destination, storage):
+def CreateOrUpdateWidget(request, destination, storageStrategy):
     try:
         widgetId = request["widgetId"]
-        owner = request["owner"].replace(" ", "-").lower()
-        data = json.dumps(request)
+        
         # ensure 'other attributes' is at the top level of 'request' as per assignment description
         if "otherAttributes" in request:
             otherAttributes = request.pop("otherAttributes")
             request.update(otherAttributes)
-        if storage == "s3":
+
+        if storageStrategy == "s3":
+            owner = request["owner"].replace(" ", "-").lower()
             s3Key = f"widgets/{owner}/{widgetId}"
             data = json.dumps(request)
             S3_CLIENT.put_object(Body=data, Bucket=destination, Key=s3Key, ContentType='application/json')
-            logging.info(f"Widget with ID {widgetId} stored in S3 at {s3Key}")
-        elif storage == "dynamodb":   
+            logging.info(f"Widget with ID {widgetId} stored in S3 at {destination}")
+
+        elif storageStrategy == "dynamodb":   
             dynamoDict = {"id": {"S": widgetId}}
             for key, value in request.items():
                 dynamoDict[key] = GetDynamoAttribute(value)
             DYNAMODB_CLIENT.put_item(TableName=destination, Item=dynamoDict)
             logging.info(f"Widget with ID {widgetId} stored in DynamoDB at {destination}")
+
     except Exception as e:
         logging.error(f"Error creating widget: {e}")
 
-def UpdateWidget(request, destination, storage):
-    widgetId = request["widgetId"]
+def DeleteWidget(widgetId, destination, storageStrategy):
     try:
-        if storage == "s3":
-            owner = request["owner"].replace(" ", "-").lower()
-            s3Key = f"widgets/{owner}/{widgetId}"  # Assumes a certain directory structure for widgets
-            data = json.dumps(request)
-            S3_CLIENT.put_object(Body=data, Bucket=destination, Key=s3Key, ContentType='application/json')
-            logging.info(f"Widget with ID {widgetId} updated in S3 at {s3Key}")
-        elif storage == "dynamodb":
-            dynamoDict = {"id": {"S": widgetId}}
-            for key, value in request.items():
-                dynamoDict[key] = GetDynamoAttribute(value)
-            DYNAMODB_CLIENT.put_item(TableName=destination, Item=dynamoDict)
-            logging.info(f"Widget with ID {widgetId} updated in DynamoDB at {destination}")
-    except Exception as e:
-        logging.error(f"Error updating widget with ID {widgetId}: {e}")
-
-def DeleteWidget(widgetId, destination, storage):
-    try:
-        if storage == "s3":
-            s3Key = f"widgets/{widgetId}"  # Assumes a certain directory structure for widgets
+        if storageStrategy == "s3":
+            s3Key = f"widgets/{widgetId}"
             S3_CLIENT.delete_object(Bucket=destination, Key=s3Key)
             logging.info(f"Widget with ID {widgetId} deleted from S3 at {s3Key}")
-        elif storage == "dynamodb":
+
+        elif storageStrategy == "dynamodb":
             DYNAMODB_CLIENT.delete_item(TableName=destination, Key={"id": {"S": widgetId}})
             logging.info(f"Widget with ID {widgetId} deleted from DynamoDB at {destination}")
+
     except Exception as e:
         logging.error(f"Error deleting widget with ID {widgetId}: {e}")
 
-def GetDynamoAttribute(value):
-    if isinstance(value, str):
-        return {"S": value}
-    elif isinstance(value, int) or isinstance(value, float):
-        return {"N": str(value)}
-    elif isinstance(value, list):
-        return {"L": [GetDynamoAttribute(item) for item in value]}
-    elif isinstance(value, dict):
-        return {"M": {key: GetDynamoAttribute(val) for key, val in value.items()}}
-
-def DeleteFromStorage(key, source):
+# ---- DELETE FROM SOURCE AFTER PROCESSING ----
+def DeleteFromStorage(key, bucketSource):
     try:
-        S3_CLIENT.delete_object(Bucket=source, Key=key)
-        logging.info(f"Request with key {key} deleted from {source}")
+        S3_CLIENT.delete_object(Bucket=bucketSource, Key=key)
+        logging.info(f"Request with key {key} deleted from {bucketSource}")
     except Exception as e:
         logging.error(f"Error deleting request with key {key}: {e}")
 
-# needs to retrieve widget reqeusts from SQS rather than S3 bucket if specified
-def main(source, destination, storage, queueURL):
+def DeleteFromQueue(queueURL, receiptHandle):
+    SQS_CLIENT.delete_message(QueueUrl=queueURL, ReceiptHandle=receiptHandle)
+
+# ---- DRIVER CODE ----
+def main(bucketSource, destination, storageStrategy, queueURL):
     while True:
-        if storage:
-            request, key = RetrieveRequest(source)
+        if bucketSource and not queueURL:
+            request, key = RetrieveRequestFromS3(bucketSource)
             if request:
-                ProcessRequest(request, destination, storage)
-                DeleteFromStorage(key, source)
+                try:
+                    ProcessRequest(request, destination, storageStrategy)
+                    DeleteFromStorage(key, bucketSource)
+                except Exception as e:
+                    logging.error(f"Error processing request from storage: {e}")
             else:
-                time.sleep(.1)
+                time.sleep(0.1)
         elif queueURL:
-            requests = FetchFromQueue(queueURL)
-            for request in requests:
-                ProcessRequest(request, destination, storage)
-                DeleteFromQueue(queueURL, message['ReceiptHandle'])
+            requests = RetrieveRequestsFromQueue(queueURL)
+            if requests:
+                for request in requests:
+                    try:
+                        ProcessRequest(request, destination, storageStrategy)
+                        DeleteFromQueue(queueURL, request['ReceiptHandle'])
+                    except Exception as e:
+                        logging.error(f"Error processing request from queue: {e}")
+            else:
+                time.sleep(0.1)
+        else:
+            logging.error("Neither storage nor queue URL was specified. Exiting...")
+            break
 
-            
-
-
-# def main(source, destination, storage, queueURL):
-#     while True:
-#         messages = FetchFromQueue(queueURL)
-#         for message in messages:
-#             body = json.loads(message['Body'])
-#             request, key = RetrieveRequest(source, body)  # Assumes body contains required info to retrieve S3 object.
-#             if request:
-#                 ProcessRequest(request, destination, storage)
-#                 DeleteRequest(key, source) # need to keep this here to ensure the 'all previous implementation is in tact' requirement
-#                 DeleteFromQueue(queueURL, message['ReceiptHandle'])
-#         if not messages:
-#             time.sleep(.1)
-
-# def main(source, destination, storage):
-#     while True:
-#         request, key = RetrieveRequest(source)
-#         if request:
-#             ProcessRequest(request, destination, storage)
-#             DeleteRequest(key, source)
-#         else:
-#             time.sleep(.1)
-
-
-# this will only run if consumer.py is run directly, not being imported
-# i needed to place the command-line args here to let my unit test program work
+# ---- COMMAND-LINE ARGS SETUP ----
 if __name__ == "__main__":
-    # Command-line arguments setup 
     # EXAMPLES:
     # python3 consumer.py --request-source usu-cs5260-tylerj-requests --request-destination widgets --storage-strategy s3
     # python3 consumer.py --queue-url https://sqs.us-west-2.amazonaws.com/123456789012/myqueue --request-destination widgets --storage-strategy dynamodb
@@ -213,9 +177,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # define command-line argument constants
-    REQUEST_SOURCE = args.request_source
-    REQUEST_DESTINATION = args.request_destination
-    STORAGE_STRATEGY = args.storage_strategy
-    QUEUE_URL = args.queue_url
+    REQUEST_SOURCE = args.request_source # optional - the s3 bucket it is coming from
+    REQUEST_DESTINATION = args.request_destination # required
+    STORAGE_STRATEGY = args.storage_strategy # required
+    QUEUE_URL = args.queue_url # optional - the sqs queue it is coming from
 
     main(REQUEST_SOURCE, REQUEST_DESTINATION, STORAGE_STRATEGY, QUEUE_URL)
