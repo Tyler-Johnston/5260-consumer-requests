@@ -32,6 +32,33 @@ class TestRetrieveRequestFromS3(unittest.TestCase):
                 request, key = RetrieveRequestFromS3("some-bucket")
                 self.assertEqual(key, '1234')
                 self.assertEqual(request, myRequest)
+
+    @patch('consumer.SQS_CLIENT.receive_message')
+    def test_retrieve_requests_from_queue(self, mock_receive_message):
+        # prepare the mock SQS messages
+        mock_sqs_messages = [{'Body': json.dumps(request)} for request in SAMPLE_REQUESTS]
+
+        # mock response from SQS as it would be received
+        mock_response = {'Messages': mock_sqs_messages}
+        mock_receive_message.return_value = mock_response
+
+        # the queue URL for the test (can be a fake one for testing purposes)
+        queue_url = 'https://sqs.fake-region.amazonaws.com/123456789012/my-queue'
+
+        # when RetrieveRequestsFromQueue is called, it should now receive our mock messages
+        messages = RetrieveRequestsFromQueue(queue_url)
+
+        # assertions to check if the correct number of messages were retrieved and they match the sample requests
+        self.assertEqual(len(messages), len(SAMPLE_REQUESTS))
+        for i, message in enumerate(messages):
+            self.assertEqual(json.loads(message['Body']), SAMPLE_REQUESTS[i])
+
+        # validate that the mock was called with the expected parameters
+        mock_receive_message.assert_called_once_with(
+            QueueUrl=queue_url,
+            MaxNumberOfMessages=10,
+            WaitTimeSeconds=20
+        )
         
 class TestProcessRequest(unittest.TestCase):
 
@@ -57,7 +84,6 @@ class TestProcessRequest(unittest.TestCase):
                 # reset mocks at the end of each iteration
                 mock_create_update_widget.reset_mock()
                 mock_delete_widget.reset_mock()
-
 class TestCreateOrUpdateWidget(unittest.TestCase):
 
     @patch('consumer.S3_CLIENT.put_object')
@@ -112,7 +138,7 @@ class TestCreateOrUpdateWidget(unittest.TestCase):
 class TestDeleteRequest(unittest.TestCase):
 
     @patch('consumer.S3_CLIENT.delete_object')
-    def test_delete_request(self, mock_delete_object):
+    def test_delete_from_s3(self, mock_delete_object):
         DeleteFromStorage('1234', 'some-bucket')
         mock_delete_object.assert_called_once_with(Bucket='some-bucket', Key='1234')
 
