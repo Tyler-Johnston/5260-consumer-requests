@@ -23,11 +23,19 @@ def lambda_handler(event, context):
     return sqs_response
 
 def validate_request(data):
+    # Check required fields
     required_fields = ['type', 'requestId', 'widgetId', 'owner', 'label', 'description', 'otherAttributes']
     for field in required_fields:
         if field not in data:
             return False
+
+    # Check for valid types
+    valid_types = ['create', 'update', 'delete']
+    if data['type'].lower() not in valid_types:
+        return False
+
     return True
+
 
 def send_to_sqs(data, queue_url):
     sqs = boto3.client('sqs')
