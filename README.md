@@ -21,5 +21,14 @@
 ## how to use producer.jar to populate SQS:
 java -jar producer.jar -rq https://sqs.us-east-1.amazonaws.com/...
 
+java -jar producer.jar --request-bucket=usu-cs5250-green-requests
+java -jar producer.jar -rb=usu-cs5250-green-requests -mwr 10 -ird 500
+
 ## how to send files from local computer to ec2 instance:
 scp -i /path/to/your-key.pem /path/to/local/file.txt ec2-user@your-ec2-ip-address:/home/ec2-user/
+
+
+## API
+
+https://api-id.execute-api.us-east-1.amazonaws.com/widget/
+
