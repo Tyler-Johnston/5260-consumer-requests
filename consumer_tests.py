@@ -3,6 +3,7 @@ from unittest.mock import patch, Mock
 import json
 import os
 from consumer import RetrieveRequestFromS3, RetrieveRequestsFromQueue, ProcessRequest, CreateOrUpdateWidget, DeleteWidget, DeleteFromStorage, DeleteFromQueue, IsValidWidgetId
+from lambda_function import *
 
 # place the folder of sample requests into a list for testing purposes
 def LoadSampleRequests(directory):
@@ -151,6 +152,209 @@ class TestDeleteRequest(unittest.TestCase):
             QueueUrl=queue_url,
             ReceiptHandle=receipt_handle
         )
+
+
+class TestValidation(unittest.TestCase):
+
+    def setUp(self):
+        self.valid_data = {
+            "type": "create",
+            "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
+            "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
+            "owner": "Mary Matthews",
+            "label": "JWJYY",
+            "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
+            "otherAttributes": [
+                {
+                "name": "width-unit",
+                "value": "cm"
+                },
+                {
+                "name": "length-unit",
+                "value": "cm"
+                },
+                {
+                "name": "rating",
+                "value": "2.580677"
+                },
+                {
+                "name": "note",
+                "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
+                }
+            ]
+        }
+
+    def test_validate_request_valid(self):
+        # Test with valid data
+        self.assertTrue(validate_request(self.valid_data))
+
+    def test_validate_request_invalid_type(self):
+        # Test with invalid 'type' field type
+        data = self.valid_data.copy()
+        data['type'] = 123  # Non-string type
+        self.assertFalse(validate_request(data))
+
+    def test_validate_request_invalid_type_value(self):
+        # Test with invalid 'type' field value
+        data = self.valid_data.copy()
+        data['type'] = 'badtype'  # Invalid type value
+        self.assertFalse(validate_request(data))
+
+    def test_validate_request_missing_field(self):
+        # Test with missing 'owner' field
+        data = self.valid_data.copy()
+        del data['owner']
+        self.assertFalse(validate_request(data))
+
+    def test_validate_request_invalid_otherAttributes_structure(self):
+        # Test with invalid structure in 'otherAttributes'
+        data = self.valid_data.copy()
+        data['otherAttributes'][0]['name'] = ''
+        self.assertFalse(validate_request(data))
+
+
+# class TestLambdaFunction(unittest.TestCase):
+#     @patch('lambda_function.validate_request', return_value=True)
+#     @patch('lambda_function.boto3.client')
+
+#     def test_create_request(self, mock_boto_client, mock_validate):
+#         mock_sqs = mock_boto_client.return_value
+#         mock_sqs.send_message.return_value = {'MessageId': 'test-message-id', 'statusCode': 200}
+        
+#         event = {
+#         "type": "create",
+#         "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
+#         "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
+#         "owner": "Mary Matthews",
+#         "label": "JWJYY",
+#         "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
+#         "otherAttributes": [
+#             {
+#             "name": "width-unit",
+#             "value": "cm"
+#             },
+#             {
+#             "name": "length-unit",
+#             "value": "cm"
+#             },
+#             {
+#             "name": "rating",
+#             "value": "2.580677"
+#             },
+#             {
+#             "name": "note",
+#             "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
+#             }
+#         ]
+#         }
+#         # Call the lambda handler
+#         result = lambda_handler(event, {})
+#         # Assertions to validate the result
+#         self.assertEqual(result['statusCode'], 200)
+
+#     # @patch('lambda_function.validate_request', return_value=True)
+#     # @patch('lambda_function.boto3.client')
+#     # def test_update_request(self, mock_boto_client, mock_validate):
+#     #     # Simulate a valid 'update' request
+#     #     event = {
+#     #     "type": "update",
+#     #     "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
+#     #     "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
+#     #     "owner": "Mary Matthews",
+#     #     "label": "JWJYY",
+#     #     "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
+#     #     "otherAttributes": [
+#     #         {
+#     #         "name": "width-unit",
+#     #         "value": "cm"
+#     #         },
+#     #         {
+#     #         "name": "length-unit",
+#     #         "value": "cm"
+#     #         },
+#     #         {
+#     #         "name": "rating",
+#     #         "value": "2.580677"
+#     #         },
+#     #         {
+#     #         "name": "note",
+#     #         "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
+#     #         }
+#     #     ]
+#     #     }
+#     #     # Call the lambda handler
+#     #     result = lambda_handler(event, {})
+#     #     # Assertions to validate the result
+#     #     self.assertEqual(result['statusCode'], 200)
+
+#     # @patch('lambda_function.validate_request', return_value=True)
+#     # @patch('lambda_function.boto3.client')
+#     # def test_delete_request(self, mock_boto_client, mock_validate):
+#     #     # Simulate a valid 'delete' request
+#     #     event = {
+#     #     "type": "delete",
+#     #     "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
+#     #     "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
+#     #     "owner": "Mary Matthews",
+#     #     "label": "JWJYY",
+#     #     "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
+#     #     "otherAttributes": [
+#     #         {
+#     #         "name": "width-unit",
+#     #         "value": "cm"
+#     #         },
+#     #         {
+#     #         "name": "length-unit",
+#     #         "value": "cm"
+#     #         },
+#     #         {
+#     #         "name": "rating",
+#     #         "value": "2.580677"
+#     #         },
+#     #         {
+#     #         "name": "note",
+#     #         "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
+#     #         }
+#     #     ]
+#     #     }
+#     #     # Call the lambda handler
+#     #     result = lambda_handler(event, {})
+#     #     # Assertions to validate the result
+#     #     self.assertEqual(result['statusCode'], 200)
+
+#     # @patch('lambda_function.validate_request', return_value=False)
+#     # @patch('lambda_function.boto3.client')
+#     # def test_badtype_request(self, mock_boto_client, mock_validate):
+#     #     # Simulate an invalid 'badtype' request
+#     #     event = {
+#     #     "type": "badtype",
+#     #     "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
+#     #     "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
+#     #     "owner": "Mary Matthews",
+#     #     "label": "JWJYY",
+#     #     "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
+#     #     "otherAttributes": [
+#     #         {
+#     #         "name": "width-unit",
+#     #         "value": "cm"
+#     #         },
+#     #         {
+#     #         "name": "length-unit",
+#     #         "value": "cm"
+#     #         },
+#     #         {
+#     #         "name": "rating",
+#     #         "value": "2.580677"
+#     #         },
+#     #         {
+#     #         "name": "note",
+#     #         "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
+#     #         }
+#     #     ]
+#     #     }
+#     #     result = lambda_handler(event, {})
+#     #     self.assertEqual(result['statusCode'], 400)
+
 
 if __name__ == '__main__':
     unittest.main()

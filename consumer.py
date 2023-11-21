@@ -70,7 +70,7 @@ def RetrieveRequestsFromQueue(queueURL, maxMessages=10, waitTime=20):
 def ProcessRequest(request, destination, storageStrategy):
     widgetId = request["widgetId"]
     if IsValidWidgetId(widgetId):
-        requestType = request["type"]
+        requestType = request["type"].lower()
         if requestType == "create":
             CreateOrUpdateWidget(request, destination, storageStrategy, operation="created")
         elif requestType == "update":
