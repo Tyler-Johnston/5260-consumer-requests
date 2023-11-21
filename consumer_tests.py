@@ -200,6 +200,21 @@ class TestValidation(unittest.TestCase):
         data['type'] = 'badtype'  # Invalid type value
         self.assertFalse(validate_request(data))
 
+    def test_validate_request_valid_type_create(self):
+        data = self.valid_data.copy()
+        data['type'] = 'create'
+        self.assertTrue(validate_request(data))
+
+    def test_validate_request_valid_type_update(self):
+        data = self.valid_data.copy()
+        data['type'] = 'update'
+        self.assertTrue(validate_request(data))
+
+    def test_validate_request_valid_type_delete(self):
+        data = self.valid_data.copy()
+        data['type'] = 'delete'
+        self.assertTrue(validate_request(data))
+
     def test_validate_request_missing_field(self):
         # Test with missing 'owner' field
         data = self.valid_data.copy()
@@ -213,147 +228,78 @@ class TestValidation(unittest.TestCase):
         self.assertFalse(validate_request(data))
 
 
-# class TestLambdaFunction(unittest.TestCase):
-#     @patch('lambda_function.validate_request', return_value=True)
-#     @patch('lambda_function.boto3.client')
+class TestLambdaHandler(unittest.TestCase):
 
-#     def test_create_request(self, mock_boto_client, mock_validate):
-#         mock_sqs = mock_boto_client.return_value
-#         mock_sqs.send_message.return_value = {'MessageId': 'test-message-id', 'statusCode': 200}
-        
-#         event = {
-#         "type": "create",
-#         "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
-#         "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
-#         "owner": "Mary Matthews",
-#         "label": "JWJYY",
-#         "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
-#         "otherAttributes": [
-#             {
-#             "name": "width-unit",
-#             "value": "cm"
-#             },
-#             {
-#             "name": "length-unit",
-#             "value": "cm"
-#             },
-#             {
-#             "name": "rating",
-#             "value": "2.580677"
-#             },
-#             {
-#             "name": "note",
-#             "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
-#             }
-#         ]
-#         }
-#         # Call the lambda handler
-#         result = lambda_handler(event, {})
-#         # Assertions to validate the result
-#         self.assertEqual(result['statusCode'], 200)
+    @patch('lambda_function.send_to_sqs')
+    def test_successful_sqs_send(self, mock_send_to_sqs):
+        mock_send_to_sqs.return_value = {'statusCode': 200, 'body': json.dumps({'message': 'Success'})}
 
-#     # @patch('lambda_function.validate_request', return_value=True)
-#     # @patch('lambda_function.boto3.client')
-#     # def test_update_request(self, mock_boto_client, mock_validate):
-#     #     # Simulate a valid 'update' request
-#     #     event = {
-#     #     "type": "update",
-#     #     "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
-#     #     "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
-#     #     "owner": "Mary Matthews",
-#     #     "label": "JWJYY",
-#     #     "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
-#     #     "otherAttributes": [
-#     #         {
-#     #         "name": "width-unit",
-#     #         "value": "cm"
-#     #         },
-#     #         {
-#     #         "name": "length-unit",
-#     #         "value": "cm"
-#     #         },
-#     #         {
-#     #         "name": "rating",
-#     #         "value": "2.580677"
-#     #         },
-#     #         {
-#     #         "name": "note",
-#     #         "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
-#     #         }
-#     #     ]
-#     #     }
-#     #     # Call the lambda handler
-#     #     result = lambda_handler(event, {})
-#     #     # Assertions to validate the result
-#     #     self.assertEqual(result['statusCode'], 200)
+        valid_event = {
+            "type": "create",
+            "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
+            "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
+            "owner": "Mary Matthews",
+            "label": "JWJYY",
+            "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
+            "otherAttributes": [
+                {
+                "name": "width-unit",
+                "value": "cm"
+                },
+                {
+                "name": "length-unit",
+                "value": "cm"
+                },
+                {
+                "name": "rating",
+                "value": "2.580677"
+                },
+                {
+                "name": "note",
+                "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
+                }
+            ]
+        }
 
-#     # @patch('lambda_function.validate_request', return_value=True)
-#     # @patch('lambda_function.boto3.client')
-#     # def test_delete_request(self, mock_boto_client, mock_validate):
-#     #     # Simulate a valid 'delete' request
-#     #     event = {
-#     #     "type": "delete",
-#     #     "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
-#     #     "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
-#     #     "owner": "Mary Matthews",
-#     #     "label": "JWJYY",
-#     #     "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
-#     #     "otherAttributes": [
-#     #         {
-#     #         "name": "width-unit",
-#     #         "value": "cm"
-#     #         },
-#     #         {
-#     #         "name": "length-unit",
-#     #         "value": "cm"
-#     #         },
-#     #         {
-#     #         "name": "rating",
-#     #         "value": "2.580677"
-#     #         },
-#     #         {
-#     #         "name": "note",
-#     #         "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
-#     #         }
-#     #     ]
-#     #     }
-#     #     # Call the lambda handler
-#     #     result = lambda_handler(event, {})
-#     #     # Assertions to validate the result
-#     #     self.assertEqual(result['statusCode'], 200)
+        response = lambda_handler(valid_event, {})
+        self.assertEqual(response['statusCode'], 200)
+        mock_send_to_sqs.assert_called_once_with(valid_event, 'https://sqs.us-east-1.amazonaws.com/487854293488/cs5260-requests')
 
-#     # @patch('lambda_function.validate_request', return_value=False)
-#     # @patch('lambda_function.boto3.client')
-#     # def test_badtype_request(self, mock_boto_client, mock_validate):
-#     #     # Simulate an invalid 'badtype' request
-#     #     event = {
-#     #     "type": "badtype",
-#     #     "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
-#     #     "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
-#     #     "owner": "Mary Matthews",
-#     #     "label": "JWJYY",
-#     #     "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
-#     #     "otherAttributes": [
-#     #         {
-#     #         "name": "width-unit",
-#     #         "value": "cm"
-#     #         },
-#     #         {
-#     #         "name": "length-unit",
-#     #         "value": "cm"
-#     #         },
-#     #         {
-#     #         "name": "rating",
-#     #         "value": "2.580677"
-#     #         },
-#     #         {
-#     #         "name": "note",
-#     #         "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
-#     #         }
-#     #     ]
-#     #     }
-#     #     result = lambda_handler(event, {})
-#     #     self.assertEqual(result['statusCode'], 400)
+    @patch('lambda_function.send_to_sqs')
+    def test_sqs_send_failure(self, mock_send_to_sqs):
+        mock_send_to_sqs.side_effect = Exception("SQS error")
+
+        valid_event = {
+            "type": "create",
+            "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
+            "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
+            "owner": "Mary Matthews",
+            "label": "JWJYY",
+            "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
+            "otherAttributes": [
+                {
+                "name": "width-unit",
+                "value": "cm"
+                },
+                {
+                "name": "length-unit",
+                "value": "cm"
+                },
+                {
+                "name": "rating",
+                "value": "2.580677"
+                },
+                {
+                "name": "note",
+                "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
+                }
+            ]
+        }
+
+        response = lambda_handler(valid_event, {})
+        self.assertEqual(response['statusCode'], 500)
+        self.assertIn("SQS error", response['body'])
+
 
 
 if __name__ == '__main__':

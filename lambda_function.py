@@ -1,42 +1,37 @@
 import json
 import boto3
 import re
+import logging
 
+# logFile = 'lambda_function.log'
+logging.basicConfig(
+    # filename=logFile,
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 def lambda_handler(event, context):
     try:
         request_data = event
-    except json.JSONDecodeError:
+
+        # validate the request data
+        if not validate_request(request_data):
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'message': 'Invalid request data'})
+            }
+
+        # send the response to my SQS
+        queue_url = 'https://sqs.us-east-1.amazonaws.com/487854293488/cs5260-requests'
+        sqs_response = send_to_sqs(request_data, queue_url)
+        return sqs_response
+        
+    except Exception as e:
+        logging.error(f"Error occurred: {str(e)}")
         return {
-            'statusCode': 400,
-            'body': json.dumps({'message': 'Invalid JSON'})
+            'statusCode': 500,
+            'body': json.dumps({'message': f'Error occurred: {str(e)}'})
         }
-
-    # validate the request data
-    if not validate_request(request_data):
-        return {
-            'statusCode': 400,
-            'body': json.dumps({'message': 'Invalid request data'})
-        }
-
-    # send the response to my SQS
-    queue_url = 'https://sqs.us-east-1.amazonaws.com/487854293488/cs5260-requests'
-    sqs_response = send_to_sqs(request_data, queue_url)
-    return sqs_response
-
-# def validate_request(data):
-#     # Check required fields
-#     required_fields = ['type', 'requestId', 'widgetId', 'owner', 'label', 'description', 'otherAttributes']
-#     for field in required_fields:
-#         if field not in data:
-#             return False
-
-#     # Check for valid types
-#     valid_types = ['create', 'update', 'delete']
-#     if data['type'].lower() not in valid_types:
-#         return False
-
-#     return True
 
 def validate_request(data):
     # Check required fields
@@ -71,8 +66,6 @@ def validate_request(data):
             return False
 
     return True
-
-
 
 def send_to_sqs(data, queue_url):
     sqs = boto3.client('sqs')
