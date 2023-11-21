@@ -300,6 +300,37 @@ class TestLambdaHandler(unittest.TestCase):
         self.assertEqual(response['statusCode'], 500)
         self.assertIn("SQS error", response['body'])
 
+    def test_invalid_request_data(self):
+        invalid_event = {
+            "type": "BAD",
+            "requestId": "e80fab52-71a5-4a76-8c4d-11b66b83ca2a",
+            "widgetId": "8123f304-f23f-440b-a6d3-80e979fa4cd6",
+            "owner": "Mary Matthews",
+            "label": "JWJYY",
+            "description": "THBRNVNQPYAWNHGRGUKIOWCKXIVNDLWOIQTADHVEVMUAJWDONEPUEAXDITDSHJTDLCMHHSESFXSDZJCBLGIKKPUYAWKQAQI",
+            "otherAttributes": [
+                {
+                "name": "width-unit",
+                "value": "cm"
+                },
+                {
+                "name": "length-unit",
+                "value": "cm"
+                },
+                {
+                "name": "rating",
+                "value": "2.580677"
+                },
+                {
+                "name": "note",
+                "value": "FEGYXHIJCTYNUMNMGZBEIDLKXYFNHFLVDYZRNWUDQAKQSVFLPRJTTXARVEIFDOLTUSWZZWVERNWPPOEYSUFAKKAPAGUALGXNDOVPNKQQKYWWOUHGOJWKAJGUXXBXLWAKJCIVPJYRMRWMHRUVBGVILZRMESQQJRBLXISNFCXGGUFZCLYAVLRFMJFLTBOTLKQRLWXALLBINWALJEMUVPNJWWRWLTRIBIDEARTCSLZEDLZRCJGSMKUOZQUWDGLIVILTCXLFIJIULXIFGRCANQPITKQYAKTPBUJAMGYLSXMLVIOROSBSXTTRULFYPDFJSFOMCUGDOZCKEUIUMKMMIRKUEOMVLYJNJQSMVNRTNGH"
+                }
+            ]
+        }
+
+        response = lambda_handler(invalid_event, {})
+        self.assertEqual(response['statusCode'], 400)
+        self.assertIn("Invalid request data", response['body'])
 
 
 if __name__ == '__main__':
